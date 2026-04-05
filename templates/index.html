@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Document Processing System</title>
+
+    <style>
+        .alert {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .alert.error {
+            background-color: #ffe5e5;
+            color: #d8000c;
+            border: 1px solid #ffb3b3;
+        }
+
+        .alert.success {
+            background-color: #e6ffed;
+            color: #2e7d32;
+            border: 1px solid #b7ebc6;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(to right, #4e73df, #1cc88a);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0px 10px 25px rgba(0,0,0,0.2);
+            text-align: center;
+            width: 450px;
+        }
+
+        h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        input[type="file"] {
+            width: 90%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+
+        button {
+            background-color: #4e73df;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #2e59d9;
+        }
+
+        .label {
+            font-weight: bold;
+            display: block;
+            margin-top: 10px;
+        }
+
+        .message {
+            margin-top: 15px;
+            font-weight: bold;
+        }
+
+        .error {
+            color: red;
+        }
+
+        .success {
+            color: green;
+        }
+
+        table {
+            margin-top: 20px;
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        table, th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>📄 Document Processing System</h2>
+
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <label class="label">Upload PDF</label>
+            <input type="file" name="pdf_file" accept=".pdf">
+
+            <label class="label">Upload Word</label>
+            <input type="file" name="word_file" accept=".doc,.docx">
+
+            <label class="label">Upload Excel</label>
+            <input type="file" name="excel_file" accept=".xlsx">
+
+            <br><br>
+
+            <button type="submit">Upload & Process</button>
+        </form>
+
+        <!-- MESSAGE -->
+        {% if message is not none and message != "" %}
+            <div class="message {% if '❌' in message %}error{% else %}success{% endif %}">
+                {{ message }}
+            </div>
+        {% endif %}
+
+        <!-- TABLE PREVIEW -->
+        {% if table_data %}
+            <div>
+                {{ table_data|safe }}
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
