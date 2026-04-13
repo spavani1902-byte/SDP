@@ -104,20 +104,21 @@
     <div class="container">
         <h2>📄 Document Processing System</h2>
 
-        <form action="/module" method="post" enctype="multipart/form-data">
-            <label class="label">Upload PDF</label>
-            <input type="file" name="pdf_file" accept=".pdf">
+        <form action="/process" method="post">
 
-            <label class="label">Upload Word</label>
-            <input type="file" name="word_file" accept=".doc,.docx">
+    <label>Select Module:</label>
+    <select name="module" required>
+        <option value="iqac">IQAC</option>
+        <option value="committees">Committees</option>
+    </select>
 
-            <label class="label">Upload Excel</label>
-            <input type="file" name="excel_file" accept=".xlsx">
+    <!-- Hidden file path -->
+    <input type="hidden" name="file_path" value="{{ file_path }}">
 
-            <br><br>
+    <br><br>
+    <button type="submit">Process</button>
 
-            <button type="submit">Next</button>
-        </form>
+</form>
 
         <!-- MESSAGE -->
         {% if message is not none and message != "" %}

@@ -1,120 +1,168 @@
-from flask import Flask, request, render_template
+import sys
 import os
 import pandas as pd
-import oracledb
+from flask import Flask, request, render_template, send_file
+
+# 🔥 Fix import path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# ✅ IMPORT SERVICES
+from modules.iqac.service import handle_iqac
+from modules.committees.service import handle_committees
+
+# ✅ DATABASE
+from database.database import get_connection
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads'
 
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-
-
-# 🔹 Oracle DB connection
-def get_db_connection():
-    return oracledb.connect(
-        user="system",        # 🔴 change
-        password="password",    # 🔴 change
-        dsn="localhost:1521/XEPDB1"       # default Oracle XE
-    )
+# 🔁 Temporary storage (for preview → confirm)
+TEMP_DATA = {}
 
 
-# 🔹 Home page
-@app.route("/")
-def home():
-    return render_template("index.html", message=None)
+# 🏠 HOME PAGE
+@app.route('/')
+def index():
+    return render_template('index.html')
 
 
-# 🔹 Upload file
-@app.route("/upload", methods=["POST"])
-def upload_file():
+# 📤 STEP 1: Upload file → go to module selection
+@app.route('/module', methods=['POST'])
+def module():
 
-    pdf = request.files.get("pdf_file")
-    word = request.files.get("word_file")
-    excel = request.files.get("excel_file")
+    file = None
 
-    if pdf and pdf.filename != "":
-        if not pdf.filename.endswith(".pdf"):
-            return render_template("index.html", message="Upload correct PDF file")
-        file = pdf
+    # Handle multiple inputs
+    if 'excel_file' in request.files and request.files['excel_file'].filename != "":
+        file = request.files['excel_file']
 
-    elif word and word.filename != "":
-        if not (word.filename.endswith(".doc") or word.filename.endswith(".docx")):
-            return render_template("index.html", message="Upload correct Word file")
-        file = word
+    elif 'pdf_file' in request.files and request.files['pdf_file'].filename != "":
+        file = request.files['pdf_file']
 
-    elif excel and excel.filename != "":
-        if not excel.filename.endswith(".xlsx"):
-            return render_template("index.html", message="Upload correct Excel file")
-        file = excel
+    elif 'word_file' in request.files and request.files['word_file'].filename != "":
+        file = request.files['word_file']
+
+    if not file:
+        return "No file uploaded"
+
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    file.save(file_path)
+
+    return render_template("module.html", file_path=file_path)
+
+
+@app.route('/process', methods=['POST'])
+def process():
+
+    module = request.form.get('module')
+    file_path = request.form.get('file_path')
+
+    if not module or not file_path:
+        return "Invalid request"
+
+    try:
+        # ======================
+        # IQAC MODULE
+        # ======================
+        if module == "iqac":
+
+            parsed, table_name = handle_iqac(file_path)
+
+            # store for confirm
+            TEMP_DATA["data"] = parsed
+            TEMP_DATA["table_name"] = table_name
+            TEMP_DATA["module"] = module
+            print("DEBUG PARSED:", parsed[:5])
+            return render_template(
+                "preview_iqac.html",
+                data=parsed,
+                table_name=table_name
+            )
+
+        # ======================
+        # COMMITTEES MODULE
+        # ======================
+        elif module == "committees":
+
+            df, table_name = handle_committees(file_path)
+
+            TEMP_DATA["data"] = df
+            TEMP_DATA["table_name"] = table_name
+            TEMP_DATA["module"] = module
+
+            table_html = df.to_html(classes='table table-bordered', index=False)
+
+            return render_template(
+                "preview_committees.html",
+                table=table_html,
+                table_name=table_name
+            )
+
+        else:
+            return "Invalid module selected"
+
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+@app.route('/confirm', methods=['POST'])
+def confirm():
+
+    module = TEMP_DATA.get("module")
+    table_name = TEMP_DATA.get("table_name")
+
+    if not module:
+        return "Session expired"
+
+    # ======================
+    # IQAC MODULE
+    # ======================
+    if module == "iqac":
+
+        from modules.iqac.generator import update_mapping
+        import pandas as pd
+
+        parsed = TEMP_DATA["data"]
+
+        # 🔥 1. STORE CLEAN DATA IN DB
+        df_db = pd.DataFrame(parsed)
+
+        conn = get_connection()
+        df_db.to_sql("iqac_data", conn, if_exists="append", index=False)
+        conn.close()
+
+        # 🔥 2. GENERATE TEMPLATE OUTPUT
+        output_file = f"{table_name}.xlsx"
+        update_mapping(output_file, parsed)
+
+        # ❌ DO NOT use df.to_excel here
+
+        # 🔥 3. DOWNLOAD
+        return send_file(output_file, as_attachment=True)
+
+    # ======================
+    # COMMITTEES MODULE
+    # ======================
+    elif module == "committees":
+
+        df = TEMP_DATA["data"]
+
+        # 🔥 STORE IN DB
+        conn = get_connection()
+        df.to_sql(table_name, conn, if_exists="replace", index=False)
+        conn.close()
+
+        # 🔥 DOWNLOAD
+        output_file = f"{table_name}.xlsx"
+        df.to_excel(output_file, index=False)
+
+        return send_file(output_file, as_attachment=True)
 
     else:
-        return render_template("index.html", message="Please upload a file")
-
-    # Save file
-    filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-    file.save(filepath)
-
-    return render_template("structure.html")
+        return "Invalid module"
 
 
-# 🔹 Structure page
-@app.route("/structure")
-def structure():
-    return render_template("structure.html")
-
-
-# 🔹 Get counts → go to headings page
-@app.route("/headings", methods=["POST"])
-def headings():
-
-    main_count = int(request.form.get("main_count"))
-    sub_count = int(request.form.get("sub_count"))
-
-    return render_template(
-        "headings.html",
-        main_count=main_count,
-        sub_count=sub_count
-    )
-
-
-# 🔹 Store headings in Oracle DB
-@app.route("/submit_headings", methods=["POST"])
-def submit_headings():
-
-    data = request.form.to_dict()
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    main_headings = []
-    sub_headings = []
-
-    for key, value in data.items():
-        if "main_heading" in key:
-            main_headings.append(value)
-            cursor.execute(
-                "INSERT INTO HEADINGS (type, name) VALUES (:1, :2)",
-                ("main", value)
-            )
-
-        elif "sub_heading" in key:
-            sub_headings.append(value)
-            cursor.execute(
-                "INSERT INTO HEADINGS (type, name) VALUES (:1, :2)",
-                ("sub", value)
-            )
-
-    conn.commit()
-    conn.close()
-
-    return render_template(
-        "result.html",
-        main_headings=main_headings,
-        sub_headings=sub_headings
-    )
-
-
-# 🔹 Run app
+# ▶️ RUN APP
 if __name__ == "__main__":
     app.run(debug=True)

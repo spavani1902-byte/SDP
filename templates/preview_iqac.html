@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Preview Mapping</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(to right, #4e73df, #1cc88a);
+            margin: 0;
+            padding: 40px;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0px 10px 25px rgba(0,0,0,0.2);
+            max-width: 900px;
+            margin: auto;
+            text-align: center;
+        }
+
+        h2 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #4e73df;
+            color: white;
+        }
+
+        button {
+            margin-top: 20px;
+            background-color: #1cc88a;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #17a673;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>✅ Preview Extracted Mapping</h2>
+
+<table>
+<tr>
+<th>Q.No</th>
+<th>CO</th>
+<th>BL</th>
+<th>Marks</th>
+<th>Part</th>
+</tr>
+
+{% for row in data %}
+<tr>
+<td>{{row.q}}</td>
+<td>{{row.co}}</td>
+<td>{{row.level}}</td>
+<td>{{row.marks}}</td>
+<td>{{row.part}}</td>
+</tr>
+{% endfor %}
+</table>
+
+<form action="/confirm" method="post">
+<button>✔ Confirm & Generate IQAC</button>
+</form>
+
+</div>
+
+</body>
+</html>
