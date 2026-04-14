@@ -2,167 +2,250 @@ import pandas as pd
 import re
 
 
-# ==========================
-# 🔹 GET ABBREVIATION (ONLY CAPITAL LETTERS)
-# ==========================
+# ======================
+# HELPERS
+# ======================
+def normalize(text):
+    return re.sub(r'\s+', '', str(text).lower())
+
+
+def is_same_subject(a, b):
+    a = normalize(a)
+    b = normalize(b)
+
+    for word in ["lab", "workshop"]:
+        a = a.replace(word, "")
+        b = b.replace(word, "")
+
+    return a and b and (a in b or b in a)
+
+
 def get_abbreviation(text):
-    text = text.replace("&", "")
-    return "".join([c for c in text if c.isupper()])
+    return "".join([c for c in str(text) if c.isalpha() and c.isupper()])
 
 
-# ==========================
-# 🔹 CLEAN TEXT
-# ==========================
+def fallback_abbr(text):
+    words = re.findall(r'[A-Za-z]+', text)
+    return "".join([w[0].upper() for w in words])
+
+
 def clean_text(text):
     return re.sub(r'\(.*?\)', '', str(text)).strip()
 
 
-# ==========================
-# 🔹 MAIN FUNCTION
-# ==========================
+def normalize_time(t):
+    return str(t).replace(" ", "")
+
+
+def normalize_lab_abbr(abbr, faculty_map):
+    if abbr in faculty_map:
+        return abbr
+
+    # reduce (OSMP → OS)
+    for i in range(len(abbr), 1, -1):
+        short = abbr[:i]
+        if short in faculty_map:
+            return short
+
+    return abbr
+
+
+# ======================
+# MAIN FUNCTION
+# ======================
 def extract_timetable(path):
 
-    print("🚀 Starting Timetable Processing...")
+    print("\n🚀 Starting Timetable Processing...\n")
 
     df = pd.read_excel(path, header=None)
-    df = df.fillna("")
+    df = df.fillna("").astype(str)
+    df = df.apply(lambda col: col.map(lambda x: x.strip()))
 
-    # ==========================
-    # 🔹 STEP 1: FIND HEADER
-    # ==========================
+    # ======================
+    # HEADER
+    # ======================
     header_row = None
-
     for i in range(len(df)):
-        row_text = " ".join(map(str, df.iloc[i].values))
-        if re.search(r'\d{1,2}:\d{2}', row_text):
+        if re.search(r'\d{1,2}:\d{2}', " ".join(df.iloc[i])):
             header_row = i
             break
-
-    if header_row is None:
-        raise Exception("❌ Header row not found")
 
     print("✅ Header row:", header_row)
 
     time_slots = df.iloc[header_row].values
 
-    # ==========================
-    # 🔹 STEP 2: EXTRACT TIMETABLE
-    # ==========================
+    # ======================
+    # LUNCH
+    # ======================
+    lunch_cols = set()
+    for i in range(len(df)):
+        for j in range(len(df.columns)):
+            if "lunch" in str(df.iat[i, j]).lower():
+                lunch_cols.add(j)
+
+    print("🍽 Lunch columns:", lunch_cols)
+
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
     structured = []
 
+    # ======================
+    # EXTRACTION
+    # ======================
     for i in range(header_row + 1, len(df)):
 
         row = df.iloc[i].values
-        day = str(row[0]).strip()
+        day = row[0].strip()
 
-        # stop when faculty section starts
         if "name of the subject" in day.lower():
             break
 
         if day in days:
 
-            for j in range(1, len(row)):
+            print(f"\n📅 {day}")
 
-                subject = str(row[j]).strip()
-                time = str(time_slots[j]).strip()
+            j = 1
+            while j < len(row):
 
-                if not subject:
+                if j in lunch_cols:
+                    structured.append({
+                        "day": day,
+                        "time": normalize_time(time_slots[j]),
+                        "subject": "LUNCH",
+                        "faculty": ""
+                    })
+                    j += 1
                     continue
 
-                if subject.lower() in ["lunch", "break"]:
+                subject = row[j].strip()
+
+                if subject == "":
+                    j += 1
                     continue
+
+                start = normalize_time(time_slots[j]).split("-")[0]
+
+                k = j
+                while k + 1 < len(row):
+
+                    if (k + 1) in lunch_cols:
+                        break
+
+                    if not time_slots[k + 1]:
+                        break
+
+                    next_sub = row[k + 1].strip()
+
+                    if next_sub == "":
+                        k += 1
+                        continue
+
+                    if is_same_subject(subject, next_sub):
+                        k += 1
+                    else:
+                        break
+
+                end = normalize_time(time_slots[k]).split("-")[-1]
 
                 structured.append({
                     "day": day,
-                    "time": time,
+                    "time": f"{start}-{end}",
                     "subject": subject,
                     "faculty": ""
                 })
 
-    print("✅ Timetable rows:", len(structured))
+                j = k + 1
 
-    # ==========================
-    # 🔹 STEP 3: EXTRACT FACULTY (DYNAMIC 🔥)
-    # ==========================
+    # ======================
+    # FACULTY MAP (THEORY + LAB)
+    # ======================
     faculty_map = {}
-    faculty_start = None
+
+    print("\n📘 SUBJECT + LAB ABBREVIATIONS:")
 
     for i in range(len(df)):
-        row_text = " ".join(df.iloc[i].astype(str)).lower()
 
-        if "name of the subject" in row_text:
-            faculty_start = i + 1
-            break
+        row = [str(x).strip() for x in df.iloc[i]]
 
-    if faculty_start is not None:
+        # ---------- THEORY ----------
+        if len(row) >= 2 and row[0] and row[1]:
 
-        print("✅ Faculty section starts at:", faculty_start)
+            subject = clean_text(row[0])
+            faculty = row[1]
 
-        for i in range(faculty_start, len(df)):
+            if subject.lower() not in ["name of the subject", ""]:
 
-            # remove empty cells
-            row = [str(x).strip() for x in df.iloc[i].values if str(x).strip() != ""]
+                abbr = get_abbreviation(subject)
 
-            if len(row) < 2:
-                continue
+                if not abbr:
+                    abbr = fallback_abbr(subject)
 
-            # 🔥 dynamic pair scanning
-            for j in range(len(row) - 1):
+                faculty_map[abbr] = faculty
+                print(f"{abbr} → {subject}")
 
-                subject = clean_text(row[j])
-                faculty = row[j + 1]
+                faculty_map[abbr + "L"] = faculty
+                print(f"{abbr+'L'} → {subject} (LAB)")
 
-                if (
-                    subject
-                    and len(subject) > 3
-                    and any(c.isalpha() for c in subject)
-                    and any(x in faculty.lower() for x in ["dr", "mr", "mrs", "prof"])
-                ):
-                    faculty = faculty.split("/")[0].strip()
-                    faculty_map[subject] = faculty
+        # ---------- LAB ----------
+        if len(row) >= 4 and row[2] and row[3]:
 
-    print("📌 FINAL Faculty map:", faculty_map)
+            lab_subject = clean_text(row[2])
+            lab_faculty = row[3]
 
-    # ==========================
-    # 🔹 STEP 4: ABBREVIATION MAP
-    # ==========================
-    abbr_map = {}
+            if lab_subject.lower() not in ["name of the lab", ""]:
 
-    for subject, faculty in faculty_map.items():
-        abbr = get_abbreviation(subject)
-        if abbr:
-            abbr_map[abbr] = faculty
+                abbr = get_abbreviation(lab_subject)
 
-    print("📌 ABBR MAP:", abbr_map)
+                if not abbr:
+                    abbr = fallback_abbr(lab_subject)
 
-    # ==========================
-    # 🔹 STEP 5: MATCH SUBJECT → FACULTY
-    # ==========================
+                faculty_map[abbr] = lab_faculty
+                print(f"{abbr} → {lab_subject}")
+
+                faculty_map[abbr + "L"] = lab_faculty
+                print(f"{abbr+'L'} → {lab_subject} (LAB)")
+
+    # ======================
+    # ASSIGN FACULTY
+    # ======================
     for item in structured:
 
-        sub = item["subject"].replace("&", "")
-        sub_abbr = get_abbreviation(sub)
+        subject = item["subject"]
+        parts = re.split(r'[/,]', subject)
 
-        base_sub = sub_abbr.replace("LAB", "")
+        faculty_list = []
 
-        # direct match
-        if sub_abbr in abbr_map:
-            item["faculty"] = abbr_map[sub_abbr]
+        print(f"\n📗 Processing Subject: {subject}")
 
-        # fallback (LAB → THEORY)
-        elif base_sub in abbr_map:
-            item["faculty"] = abbr_map[base_sub]
+        for part in parts:
 
-    print("🎯 Timetable extraction completed")
+            original = part
+            is_lab = "lab" in part.lower()
 
-    # ==========================
-    # 🔹 FINAL OUTPUT
-    # ==========================
-    df_final = pd.DataFrame(structured)
+            if is_lab:
+                part = re.sub(r'lab', '', part, flags=re.IGNORECASE)
 
-    if df_final.empty:
-        raise Exception("❌ No timetable data extracted")
+            abbr = get_abbreviation(part)
 
-    return df_final
+            if not abbr:
+                abbr = fallback_abbr(part)
+
+            match_abbr = abbr
+            if is_lab:
+                match_abbr = normalize_lab_abbr(abbr, faculty_map)
+
+            print(f"   {original} → {abbr} (matched as {match_abbr})")
+
+            if match_abbr in faculty_map:
+                names = faculty_map[match_abbr]
+
+                for n in re.split(r'[/,]', names):
+                    faculty_list.append(n.strip())
+
+        item["faculty"] = " / ".join(sorted(set(faculty_list)))
+
+    print("\n🎯 FINAL OUTPUT:")
+    for r in structured[:10]:
+        print(r)
+
+    return pd.DataFrame(structured)
