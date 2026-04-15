@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+import json
 
 
 # ======================
@@ -24,30 +25,8 @@ def get_abbreviation(text):
     return "".join([c for c in str(text) if c.isalpha() and c.isupper()])
 
 
-def fallback_abbr(text):
-    words = re.findall(r'[A-Za-z]+', text)
-    return "".join([w[0].upper() for w in words])
-
-
-def clean_text(text):
-    return re.sub(r'\(.*?\)', '', str(text)).strip()
-
-
 def normalize_time(t):
     return str(t).replace(" ", "")
-
-
-def normalize_lab_abbr(abbr, faculty_map):
-    if abbr in faculty_map:
-        return abbr
-
-    # reduce (OSMP → OS)
-    for i in range(len(abbr), 1, -1):
-        short = abbr[:i]
-        if short in faculty_map:
-            return short
-
-    return abbr
 
 
 # ======================
@@ -90,7 +69,7 @@ def extract_timetable(path):
     structured = []
 
     # ======================
-    # EXTRACTION
+    # TIMETABLE EXTRACTION
     # ======================
     for i in range(header_row + 1, len(df)):
 
@@ -157,53 +136,81 @@ def extract_timetable(path):
                 j = k + 1
 
     # ======================
-    # FACULTY MAP (THEORY + LAB)
+    # SUBJECT + LAB TABLE
     # ======================
-    faculty_map = {}
+    subject_data = {
+        "subjects": {},
+        "labs": {}
+    }
 
-    print("\n📘 SUBJECT + LAB ABBREVIATIONS:")
+    faculty_start = None
 
     for i in range(len(df)):
+        if "name of the subject" in " ".join(df.iloc[i]).lower():
+            faculty_start = i + 1
+            break
 
-        row = [str(x).strip() for x in df.iloc[i]]
+    print("\n📘 SUBJECT + LAB TABLE:\n")
 
-        # ---------- THEORY ----------
-        if len(row) >= 2 and row[0] and row[1]:
+    if faculty_start:
 
-            subject = clean_text(row[0])
-            faculty = row[1]
+        for i in range(faculty_start, len(df)):
 
-            if subject.lower() not in ["name of the subject", ""]:
+            row = df.iloc[i]
+            values = [str(x).strip() for x in row if str(x).strip()]
 
+            if not values:
+                continue
+
+            subject = values[0]
+            subject_faculty = ""
+            lab = ""
+            lab_faculty = ""
+
+            # SUBJECT FACULTY
+            for v in values:
+                if any(x in v.lower() for x in ["mr.", "mrs.", "dr."]):
+                    subject_faculty = v
+                    break
+
+            # LAB
+            for v in values:
+                if "lab" in v.lower() or "project" in v.lower():
+                    lab = v
+                    break
+
+            # LAB FACULTY
+            if lab:
+                idx = values.index(lab)
+                for v in values[idx + 1:]:
+                    if any(x in v.lower() for x in ["mr.", "mrs.", "dr."]):
+                        lab_faculty = v
+                        break
+
+            print(f"{subject} | {subject_faculty} | {lab} | {lab_faculty}")
+
+            # SUBJECT MAP
+            if subject and subject_faculty:
                 abbr = get_abbreviation(subject)
+                subject_data["subjects"].setdefault(abbr, []).append(subject_faculty)
 
-                if not abbr:
-                    abbr = fallback_abbr(subject)
+            # LAB MAP
+            if lab and lab_faculty:
 
-                faculty_map[abbr] = faculty
-                print(f"{abbr} → {subject}")
+                lab_abbr = get_abbreviation(lab)
 
-                faculty_map[abbr + "L"] = faculty
-                print(f"{abbr+'L'} → {subject} (LAB)")
+                if "lab" in lab.lower():
+                    if not lab_abbr.endswith("L"):
+                        lab_abbr += "L"
 
-        # ---------- LAB ----------
-        if len(row) >= 4 and row[2] and row[3]:
+                if "project" in lab.lower():
+                    lab_abbr = "MP"
 
-            lab_subject = clean_text(row[2])
-            lab_faculty = row[3]
+                for f in lab_faculty.split("/"):
+                    subject_data["labs"].setdefault(lab_abbr, []).append(f.strip())
 
-            if lab_subject.lower() not in ["name of the lab", ""]:
-
-                abbr = get_abbreviation(lab_subject)
-
-                if not abbr:
-                    abbr = fallback_abbr(lab_subject)
-
-                faculty_map[abbr] = lab_faculty
-                print(f"{abbr} → {lab_subject}")
-
-                faculty_map[abbr + "L"] = lab_faculty
-                print(f"{abbr+'L'} → {lab_subject} (LAB)")
+    print("\n📦 JSON DATA:\n")
+    print(json.dumps(subject_data, indent=4))
 
     # ======================
     # ASSIGN FACULTY
@@ -215,35 +222,41 @@ def extract_timetable(path):
 
         faculty_list = []
 
-        print(f"\n📗 Processing Subject: {subject}")
-
         for part in parts:
 
-            original = part
-            is_lab = "lab" in part.lower()
+            part = part.strip()
 
-            if is_lab:
-                part = re.sub(r'lab', '', part, flags=re.IGNORECASE)
+            # ✅ ONLY SPECIAL CASE
+            if part == "L":
+                abbr = "L"
 
-            abbr = get_abbreviation(part)
+            else:
+                is_lab = "lab" in part.lower()
+                is_project = "project" in part.lower()
 
-            if not abbr:
-                abbr = fallback_abbr(part)
+                clean_part = re.sub(r'lab', '', part, flags=re.IGNORECASE)
+                clean_part = re.sub(r'project', '', clean_part, flags=re.IGNORECASE)
 
-            match_abbr = abbr
-            if is_lab:
-                match_abbr = normalize_lab_abbr(abbr, faculty_map)
+                abbr = get_abbreviation(clean_part)
 
-            print(f"   {original} → {abbr} (matched as {match_abbr})")
+                if is_lab and not abbr.endswith("L"):
+                    abbr += "L"
 
-            if match_abbr in faculty_map:
-                names = faculty_map[match_abbr]
+                if is_project:
+                    abbr = "MP"
 
-                for n in re.split(r'[/,]', names):
-                    faculty_list.append(n.strip())
+            # MAPPING
+            if abbr in subject_data["subjects"]:
+                faculty_list.extend(subject_data["subjects"][abbr])
+
+            if abbr in subject_data["labs"]:
+                faculty_list.extend(subject_data["labs"][abbr])
 
         item["faculty"] = " / ".join(sorted(set(faculty_list)))
 
+    # ======================
+    # FINAL OUTPUT
+    # ======================
     print("\n🎯 FINAL OUTPUT:")
     for r in structured[:10]:
         print(r)
