@@ -4,136 +4,89 @@
     <title>Document Processing System</title>
 
     <style>
-        .alert {
-            margin-top: 20px;
-            padding: 12px;
-            border-radius: 8px;
-            font-weight: 500;
-            text-align: center;
-        }
-
-        .alert.error {
-            background-color: #ffe5e5;
-            color: #d8000c;
-            border: 1px solid #ffb3b3;
-        }
-
-        .alert.success {
-            background-color: #e6ffed;
-            color: #2e7d32;
-            border: 1px solid #b7ebc6;
-        }
-
         body {
             font-family: Arial, sans-serif;
             background: linear-gradient(to right, #4e73df, #1cc88a);
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
-            margin: 0;
+            height: 100vh;
         }
 
         .container {
             background: white;
             padding: 40px;
             border-radius: 12px;
+            width: 450px;
             box-shadow: 0px 10px 25px rgba(0,0,0,0.2);
             text-align: center;
-            width: 450px;
         }
 
         h2 {
-            margin-bottom: 20px;
             color: #333;
         }
 
-        input[type="file"] {
-            width: 90%;
+        select {
             padding: 10px;
-            margin: 10px 0;
+            width: 90%;
+            margin-top: 15px;
         }
 
         button {
+            margin-top: 20px;
+            padding: 12px 30px;
             background-color: #4e73df;
             color: white;
             border: none;
-            padding: 12px 30px;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 16px;
         }
 
         button:hover {
             background-color: #2e59d9;
         }
 
-        .label {
-            font-weight: bold;
-            display: block;
-            margin-top: 10px;
-        }
-
-        .message {
+        .file-info {
             margin-top: 15px;
-            font-weight: bold;
-        }
-
-        .error {
-            color: red;
-        }
-
-        .success {
-            color: green;
-        }
-
-        table {
-            margin-top: 20px;
-            border-collapse: collapse;
-            width: 100%;
-        }
-
-        table, th, td {
-            border: 1px solid #ccc;
-            padding: 8px;
+            font-size: 14px;
+            color: #555;
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h2>📄 Document Processing System</h2>
+
+        <h2>📄 Select Module</h2>
+
+        <!-- Show uploaded file -->
+        <div class="file-info">
+            <strong>Uploaded File:</strong><br>
+            {{ file_path }}
+        </div>
 
         <form action="/process" method="post">
 
-    <label>Select Module:</label>
-    <select name="module" required>
-        <option value="iqac">IQAC</option>
-        <option value="committees">Committees</option>
-        <option value="timetable">Timetable</option>
-    </select>
+            <!-- Hidden file path -->
+            <input type="hidden" name="file_path" value="{{ file_path }}">
 
-    <!-- Hidden file path -->
-    <input type="hidden" name="file_path" value="{{ file_path }}">
+            <br>
 
-    <br><br>
-    <button type="submit">Process</button>
+            <label>Select Module:</label><br>
 
-</form>
+            <select name="module" required>
+                <option value="">-- Select --</option>
+                <option value="iqac">IQAC</option>
+                <option value="committees">Committees</option>
+                <option value="timetable">Timetable</option>
+            </select>
 
-        <!-- MESSAGE -->
-        {% if message is not none and message != "" %}
-            <div class="message {% if '❌' in message %}error{% else %}success{% endif %}">
-                {{ message }}
-            </div>
-        {% endif %}
+            <br>
 
-        <!-- TABLE PREVIEW -->
-        {% if table_data %}
-            <div>
-                {{ table_data|safe }}
-            </div>
-        {% endif %}
+            <button type="submit">Process</button>
+
+        </form>
+
     </div>
 </body>
 </html>

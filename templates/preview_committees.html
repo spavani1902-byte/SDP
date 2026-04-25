@@ -5,7 +5,11 @@
 
     <style>
         body {
+<<<<<<< HEAD
             font-family: Arial, sans-serif;
+=======
+            font-family: Arial;
+>>>>>>> 4ff616a1902dbb4061024eb46e6dfa82a7ab332e
             background: linear-gradient(to right, #4e73df, #1cc88a);
             margin: 0;
             padding: 20px;
@@ -16,6 +20,7 @@
             padding: 30px;
             border-radius: 12px;
             max-width: 1200px;
+<<<<<<< HEAD
             width: 95%;
             margin: auto;
             box-shadow: 0px 10px 25px rgba(0,0,0,0.2);
@@ -35,6 +40,9 @@
         .table-container {
             overflow-x: auto;
             margin-top: 20px;
+=======
+            margin: auto;
+>>>>>>> 4ff616a1902dbb4061024eb46e6dfa82a7ab332e
         }
 
         table {
@@ -42,6 +50,7 @@
             border-collapse: collapse;
         }
 
+<<<<<<< HEAD
         table, th, td {
             border: 1px solid #ccc;
         }
@@ -81,6 +90,26 @@
         .confirm-btn:hover {
             transform: scale(1.05);
             box-shadow: 0px 8px 20px rgba(0,0,0,0.4);
+=======
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+        }
+
+        th {
+            background: #4e73df;
+            color: white;
+        }
+
+        .btn {
+            margin-top: 20px;
+            padding: 12px 25px;
+            background: #ff7e5f;
+            color: white;
+            border: none;
+            cursor: pointer;
+>>>>>>> 4ff616a1902dbb4061024eb46e6dfa82a7ab332e
         }
     </style>
 </head>
@@ -89,6 +118,7 @@
 
 <div class="container">
 
+<<<<<<< HEAD
     <h2>📄 Preview</h2>
 
     <!-- Module Title -->
@@ -117,6 +147,26 @@
 
         </form>
     </div>
+=======
+    <h2>Committees Preview</h2>
+
+    <!-- SAFE CHECK -->
+    {% if table %}
+        <div>
+            {{ table | safe }}
+        </div>
+    {% else %}
+        <p>No data available</p>
+    {% endif %}
+
+    <form action="/confirm" method="post">
+        <input type="hidden" name="table_name" value="{{ table_name or '' }}">
+        <input type="hidden" name="module" value="{{ module or '' }}">
+        <input type="hidden" name="file_path" value="{{ file_path or '' }}">
+
+        <button class="btn">Confirm & Download</button>
+    </form>
+>>>>>>> 4ff616a1902dbb4061024eb46e6dfa82a7ab332e
 
 </div>
 

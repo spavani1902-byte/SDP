@@ -4,26 +4,6 @@
     <title>Document Processing System</title>
 
     <style>
-        .alert {
-            margin-top: 20px;
-            padding: 12px;
-            border-radius: 8px;
-            font-weight: 500;
-            text-align: center;
-        }
-
-        .alert.error {
-            background-color: #ffe5e5;
-            color: #d8000c;
-            border: 1px solid #ffb3b3;
-        }
-
-        .alert.success {
-            background-color: #e6ffed;
-            color: #2e7d32;
-            border: 1px solid #b7ebc6;
-        }
-
         body {
             font-family: Arial, sans-serif;
             background: linear-gradient(to right, #4e73df, #1cc88a);
@@ -40,7 +20,7 @@
             border-radius: 12px;
             box-shadow: 0px 10px 25px rgba(0,0,0,0.2);
             text-align: center;
-            width: 450px;
+            width: 500px;
         }
 
         h2 {
@@ -48,13 +28,24 @@
             color: #333;
         }
 
+        .section {
+            margin: 15px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .section:hover {
+            background-color: #f9f9f9;
+        }
+
         input[type="file"] {
             width: 90%;
-            padding: 10px;
-            margin: 10px 0;
+            padding: 8px;
         }
 
         button {
+            margin-top: 20px;
             background-color: #4e73df;
             color: white;
             border: none;
@@ -68,70 +59,85 @@
             background-color: #2e59d9;
         }
 
+        .note {
+            font-size: 13px;
+            color: #666;
+        }
+
         .label {
             font-weight: bold;
             display: block;
-            margin-top: 10px;
-        }
-
-        .message {
-            margin-top: 15px;
-            font-weight: bold;
-        }
-
-        .error {
-            color: red;
-        }
-
-        .success {
-            color: green;
-        }
-
-        table {
-            margin-top: 20px;
-            border-collapse: collapse;
-            width: 100%;
-        }
-
-        table, th, td {
-            border: 1px solid #ccc;
-            padding: 8px;
+            margin-bottom: 8px;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h2>📄 Document Processing System</h2>
+<div class="container">
 
-        <form action="/module" method="post" enctype="multipart/form-data">
-            <label class="label">Upload PDF</label>
-            <input type="file" name="pdf_file" accept=".pdf">
+    <h2>📄 Document Processing System</h2>
 
-            <label class="label">Upload Word</label>
-            <input type="file" name="word_file" accept=".doc,.docx">
+    <form id="uploadForm" action="/module" method="post" enctype="multipart/form-data">
 
-            <label class="label">Upload Excel</label>
-            <input type="file" name="excel_file" accept=".xlsx">
+        <!-- PDF -->
+        <div class="section">
+            <label class="label">📕 Upload PDF</label>
+            <input type="file" id="pdf">
+        </div>
 
-            <br><br>
+        <!-- WORD -->
+        <div class="section">
+            <label class="label">📘 Upload Word</label>
+            <input type="file" id="word">
+        </div>
 
-            <button type="submit">Next</button>
-        </form>
+        <!-- EXCEL -->
+        <div class="section">
+            <label class="label">📗 Upload Excel</label>
+            <input type="file" id="excel">
+        </div>
 
-        <!-- MESSAGE -->
-        {% if message is not none and message != "" %}
-            <div class="message {% if '❌' in message %}error{% else %}success{% endif %}">
-                {{ message }}
-            </div>
-        {% endif %}
+        <!-- REAL INPUT (for backend) -->
+        <input type="file" name="file" id="finalFile" style="display:none">
 
-        <!-- TABLE PREVIEW -->
-        {% if table_data %}
-            <div>
-                {{ table_data|safe }}
-            </div>
-        {% endif %}
-    </div>
+        <div class="note">
+            Upload ONLY one file (PDF / Word / Excel)
+        </div>
+
+        <button type="submit">Next</button>
+
+    </form>
+
+</div>
+
+<script>
+document.getElementById("uploadForm").addEventListener("submit", function(e) {
+
+    let pdf = document.getElementById("pdf").files[0];
+    let word = document.getElementById("word").files[0];
+    let excel = document.getElementById("excel").files[0];
+
+    let finalInput = document.getElementById("finalFile");
+
+    if (pdf) {
+        setFile(finalInput, pdf);
+    } else if (word) {
+        setFile(finalInput, word);
+    } else if (excel) {
+        setFile(finalInput, excel);
+    } else {
+        alert("❌ Please upload a file");
+        e.preventDefault();
+    }
+
+});
+
+function setFile(input, file) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+}
+</script>
+
 </body>
 </html>

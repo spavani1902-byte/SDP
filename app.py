@@ -3,26 +3,24 @@ import os
 import pandas as pd
 from flask import Flask, request, render_template, send_file
 
-# 🔥 Fix import path
+# Fix import path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# ✅ IMPORT SERVICES
+# Services
 from modules.iqac.service import handle_iqac
 from modules.committees.service import handle_committees
 from modules.timetable.service import handle_timetable
 
-# ✅ DATABASE
 from database.database import get_connection
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
-# 🔁 Temporary storage (for preview → confirm)
 TEMP_DATA = {}
 
 
 # ==========================
-# 🏠 HOME PAGE
+# HOME PAGE
 # ==========================
 @app.route('/')
 def index():
@@ -30,24 +28,14 @@ def index():
 
 
 # ==========================
-# 📤 STEP 1: FILE UPLOAD
+# FILE UPLOAD
 # ==========================
 @app.route('/module', methods=['POST'])
 def module():
 
-    file = None
+    file = request.files.get('file')
 
-    # Handle multiple inputs
-    if 'excel_file' in request.files and request.files['excel_file'].filename != "":
-        file = request.files['excel_file']
-
-    elif 'pdf_file' in request.files and request.files['pdf_file'].filename != "":
-        file = request.files['pdf_file']
-
-    elif 'word_file' in request.files and request.files['word_file'].filename != "":
-        file = request.files['word_file']
-
-    if not file:
+    if not file or file.filename == "":
         return "❌ No file uploaded"
 
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -59,7 +47,7 @@ def module():
 
 
 # ==========================
-# ⚙ STEP 2: PROCESS MODULE
+# PROCESS
 # ==========================
 @app.route('/process', methods=['POST'])
 def process():
@@ -71,9 +59,17 @@ def process():
         return "❌ Invalid request"
 
     try:
+        # 🔥 AUTO Word → Excel
+        ext = os.path.splitext(file_path)[1].lower()
+
+        if ext == ".docx":
+            from word.converter import convert_word_to_excel
+            print("📄 Converting Word → Excel...")
+            file_path = convert_word_to_excel(file_path)
+            print("✅ Converted:", file_path)
 
         # ======================
-        # IQAC MODULE
+        # IQAC
         # ======================
         if module == "iqac":
 
@@ -86,11 +82,13 @@ def process():
             return render_template(
                 "preview_iqac.html",
                 data=parsed,
-                table_name=table_name
+                table_name=table_name,
+                module=module,
+                file_path=file_path
             )
 
         # ======================
-        # COMMITTEES MODULE
+        # COMMITTEES
         # ======================
         elif module == "committees":
 
@@ -105,11 +103,13 @@ def process():
             return render_template(
                 "preview_committees.html",
                 table=table_html,
-                table_name=table_name
+                table_name=table_name,
+                module=module,
+                file_path=file_path
             )
 
         # ======================
-        # TIMETABLE MODULE
+        # TIMETABLE
         # ======================
         elif module == "timetable":
 
@@ -119,24 +119,25 @@ def process():
             TEMP_DATA["table_name"] = table_name
             TEMP_DATA["module"] = module
 
-            # convert to html
             table_html = df.to_html(classes='table table-bordered', index=False)
 
             return render_template(
                 "preview_timetable.html",
                 table=table_html,
-                table_name=table_name
+                table_name=table_name,
+                module=module,
+                file_path=file_path
             )
 
         else:
             return "❌ Invalid module selected"
 
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        raise e
 
 
 # ==========================
-# ✅ STEP 3: CONFIRM + SAVE
+# CONFIRM + DOWNLOAD
 # ==========================
 @app.route('/confirm', methods=['POST'])
 def confirm():
@@ -147,11 +148,7 @@ def confirm():
     if module is None:
         return "❌ Session expired"
 
-    # ======================
-    # IQAC
-    # ======================
     if module == "iqac":
-
         parsed = TEMP_DATA["data"]
 
         from modules.iqac.generator import update_mapping
@@ -159,59 +156,31 @@ def confirm():
 
         output_file = f"iqac_output_{int(time.time())}.xlsx"
         update_mapping(output_file, parsed)
-
         df = pd.read_excel(output_file)
 
-    # ======================
-    # COMMITTEES
-    # ======================
     elif module == "committees":
-
         df = TEMP_DATA["data"]
 
-    # ======================
-    # TIMETABLE
-    # ======================
     elif module == "timetable":
-
         df = TEMP_DATA["data"]
-
-        # 🔥 IMPORTANT FIX
         if not isinstance(df, pd.DataFrame):
             df = pd.DataFrame(df)
 
     else:
         return "❌ Unknown module"
 
-    # ======================
-    # VALIDATE DATA
-    # ======================
     if df is None or df.empty:
         return "❌ No data to store"
 
-    print("✅ Saving to DB:")
-    print(df.head())
-
-    # ======================
-    # SAVE TO DATABASE
-    # ======================
     conn = get_connection()
     df.to_sql(table_name, conn, if_exists="replace", index=False)
     conn.close()
 
-    print(f"✅ Stored in DB table: {table_name}")
-
-    # ======================
-    # DOWNLOAD FILE
-    # ======================
     output_file = f"{table_name}.xlsx"
     df.to_excel(output_file, index=False)
 
     return send_file(output_file, as_attachment=True)
 
 
-# ==========================
-# ▶ RUN APP
-# ==========================
 if __name__ == "__main__":
     app.run(debug=True)
