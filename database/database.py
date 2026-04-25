@@ -1,10 +1,14 @@
 import sqlite3
 import pandas as pd
+import os
 
-DB_PATH = "database/iqac.db"   # ✅ ONE PLACE ONLY
+# 🔥 FIXED ABSOLUTE PATH
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "database", "iqac.db")
 
 
 def get_connection(db_name=DB_PATH):
+    print("📂 USING DB:", db_name)   # 🔥 debug
     return sqlite3.connect(db_name)
 
 

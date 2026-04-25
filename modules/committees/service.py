@@ -1,22 +1,25 @@
-from .committees import save_dynamic_table
-from database.database import read_table
+import time
+import pandas as pd
+from .committees import extract_committees
+
 
 def handle_committees(file_path):
-    """
-    Handles Committees processing flow.
-    Saves table in DB and returns dataframe + table name
-    """
 
-    try:
-        table_name = save_dynamic_table(file_path)
+    print("🚀 Starting Committees Processing...")
 
-        df = read_table(table_name)
+    df = extract_committees(file_path)
 
-        if df is None or df.empty:
-            raise Exception("No data found in generated table")
+    if df is None:
+        raise Exception("No data returned")
 
-        return df, table_name
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame(df)
 
-    except Exception as e:
-        print("❌ Committees Error:", e)
-        raise Exception(f"Committees processing failed: {e}")
+    if df.empty:
+        raise Exception("No Committees data extracted")
+
+    table_name = f"committees_{int(time.time())}"
+
+    print("✅ Committees processed successfully")
+
+    return df, table_name

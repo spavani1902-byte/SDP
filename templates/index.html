@@ -3,6 +3,9 @@
 <head>
     <title>Document Processing System</title>
 
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -17,42 +20,52 @@
         .container {
             background: white;
             padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0px 10px 25px rgba(0,0,0,0.2);
+            border-radius: 15px;
+            box-shadow: 0px 12px 30px rgba(0,0,0,0.25);
             text-align: center;
-            width: 500px;
+            width: 520px;
         }
 
         h2 {
-            margin-bottom: 20px;
+            margin-bottom: 25px;
             color: #333;
         }
 
         .section {
-            margin: 15px 0;
-            padding: 15px;
+            margin: 18px 0;
+            padding: 18px;
             border: 1px solid #ddd;
-            border-radius: 8px;
+            border-radius: 10px;
+            transition: 0.3s;
         }
 
         .section:hover {
-            background-color: #f9f9f9;
+            background-color: #f8f9fc;
+            transform: scale(1.02);
+        }
+
+        .label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 10px;
+            font-size: 16px;
         }
 
         input[type="file"] {
             width: 90%;
-            padding: 8px;
+            padding: 6px;
         }
 
         button {
-            margin-top: 20px;
+            margin-top: 25px;
             background-color: #4e73df;
             color: white;
             border: none;
-            padding: 12px 30px;
-            border-radius: 6px;
+            padding: 12px 35px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 16px;
+            transition: 0.3s;
         }
 
         button:hover {
@@ -62,12 +75,16 @@
         .note {
             font-size: 13px;
             color: #666;
+            margin-top: 10px;
         }
 
-        .label {
-            font-weight: bold;
-            display: block;
-            margin-bottom: 8px;
+        /* ICON COLORS */
+        .pdf-icon { color: #e74a3b; }
+        .word-icon { color: #2b579a; }
+        .excel-icon { color: #1cc88a; }
+
+        .icon {
+            margin-right: 8px;
         }
     </style>
 </head>
@@ -81,23 +98,29 @@
 
         <!-- PDF -->
         <div class="section">
-            <label class="label">📕 Upload PDF</label>
-            <input type="file" id="pdf">
+            <label class="label">
+                <i class="fa-solid fa-file-pdf pdf-icon icon"></i> Upload PDF
+            </label>
+            <input type="file" id="pdf" accept=".pdf">
         </div>
 
         <!-- WORD -->
         <div class="section">
-            <label class="label">📘 Upload Word</label>
-            <input type="file" id="word">
+            <label class="label">
+                <i class="fas fa-file-word word-icon icon"></i> Upload Word
+            </label>
+            <input type="file" id="word" accept=".doc,.docx">
         </div>
 
         <!-- EXCEL -->
         <div class="section">
-            <label class="label">📗 Upload Excel</label>
-            <input type="file" id="excel">
+            <label class="label">
+                <i class="fas fa-file-excel excel-icon icon"></i> Upload Excel
+            </label>
+            <input type="file" id="excel" accept=".xls,.xlsx">
         </div>
 
-        <!-- REAL INPUT (for backend) -->
+        <!-- FINAL INPUT -->
         <input type="file" name="file" id="finalFile" style="display:none">
 
         <div class="note">

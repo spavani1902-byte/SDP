@@ -6,7 +6,7 @@ from flask import Flask, request, render_template, send_file
 # Fix import path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Services
+# Services (ONLY extraction)
 from modules.iqac.service import handle_iqac
 from modules.committees.service import handle_committees
 from modules.timetable.service import handle_timetable
@@ -47,7 +47,7 @@ def module():
 
 
 # ==========================
-# PROCESS
+# PROCESS (PREVIEW ONLY)
 # ==========================
 @app.route('/process', methods=['POST'])
 def process():
@@ -59,128 +59,101 @@ def process():
         return "❌ Invalid request"
 
     try:
-        # 🔥 AUTO Word → Excel
+        # 🔄 Convert Word → Excel
         ext = os.path.splitext(file_path)[1].lower()
-
         if ext == ".docx":
             from word.converter import convert_word_to_excel
-            print("📄 Converting Word → Excel...")
             file_path = convert_word_to_excel(file_path)
-            print("✅ Converted:", file_path)
 
         # ======================
-        # IQAC
+        # MODULE HANDLING
         # ======================
         if module == "iqac":
+            df, table_name = handle_iqac(file_path)
+            template = "preview_iqac.html"
 
-            parsed, table_name = handle_iqac(file_path)
-
-            TEMP_DATA["data"] = parsed
-            TEMP_DATA["table_name"] = table_name
-            TEMP_DATA["module"] = module
-
-            return render_template(
-                "preview_iqac.html",
-                data=parsed,
-                table_name=table_name,
-                module=module,
-                file_path=file_path
-            )
-
-        # ======================
-        # COMMITTEES
-        # ======================
         elif module == "committees":
-
             df, table_name = handle_committees(file_path)
+            template = "preview_committees.html"
 
-            TEMP_DATA["data"] = df
-            TEMP_DATA["table_name"] = table_name
-            TEMP_DATA["module"] = module
-
-            table_html = df.to_html(classes='table table-bordered', index=False)
-
-            return render_template(
-                "preview_committees.html",
-                table=table_html,
-                table_name=table_name,
-                module=module,
-                file_path=file_path
-            )
-
-        # ======================
-        # TIMETABLE
-        # ======================
         elif module == "timetable":
-
             df, table_name = handle_timetable(file_path)
-
-            TEMP_DATA["data"] = df
-            TEMP_DATA["table_name"] = table_name
-            TEMP_DATA["module"] = module
-
-            table_html = df.to_html(classes='table table-bordered', index=False)
-
-            return render_template(
-                "preview_timetable.html",
-                table=table_html,
-                table_name=table_name,
-                module=module,
-                file_path=file_path
-            )
+            template = "preview_timetable.html"
 
         else:
             return "❌ Invalid module selected"
 
+        # 🔥 Ensure DataFrame
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame(df)
+
+        if df.empty:
+            return "❌ No data extracted"
+
+        # 🔥 STORE EXACT DATAFRAME (IMPORTANT CHANGE)
+        TEMP_DATA["df"] = df
+        TEMP_DATA["table_name"] = table_name
+        TEMP_DATA["module"] = module
+
+        print("📊 PREVIEW DATA:")
+        print(df.head())
+
+        # 🔥 Convert for UI only
+        data = df.to_dict(orient='records')
+
+        return render_template(
+            template,
+            data=data,
+            table_name=table_name,
+            module=module,
+            file_path=file_path
+        )
+
     except Exception as e:
-        raise e
+        return f"❌ Error: {e}"
 
 
 # ==========================
-# CONFIRM + DOWNLOAD
+# CONFIRM → STORE + DOWNLOAD
 # ==========================
 @app.route('/confirm', methods=['POST'])
 def confirm():
 
-    module = TEMP_DATA.get("module")
+    df = TEMP_DATA.get("df")
     table_name = TEMP_DATA.get("table_name")
 
-    if module is None:
+    if df is None or table_name is None:
         return "❌ Session expired"
 
-    if module == "iqac":
-        parsed = TEMP_DATA["data"]
-
-        from modules.iqac.generator import update_mapping
-        import time
-
-        output_file = f"iqac_output_{int(time.time())}.xlsx"
-        update_mapping(output_file, parsed)
-        df = pd.read_excel(output_file)
-
-    elif module == "committees":
-        df = TEMP_DATA["data"]
-
-    elif module == "timetable":
-        df = TEMP_DATA["data"]
-        if not isinstance(df, pd.DataFrame):
-            df = pd.DataFrame(df)
-
-    else:
-        return "❌ Unknown module"
-
-    if df is None or df.empty:
+    if df.empty:
         return "❌ No data to store"
 
-    conn = get_connection()
-    df.to_sql(table_name, conn, if_exists="replace", index=False)
-    conn.close()
+    try:
+        print("📊 STORING DATA:")
+        print(df.head())
 
-    output_file = f"{table_name}.xlsx"
-    df.to_excel(output_file, index=False)
+        # 🔥 STORE EXACT PREVIEW DATA
+        conn = get_connection()
 
-    return send_file(output_file, as_attachment=True)
+        df.to_sql(table_name, conn, if_exists="replace", index=False)
+
+        conn.commit()   # 🔥 IMPORTANT
+        conn.close()
+
+        print(f"✅ Data stored in DB: {table_name}")
+
+        # 🔥 Download file
+        output_file = f"{table_name}.xlsx"
+        df.to_excel(output_file, index=False)
+
+        return send_file(output_file, as_attachment=True)
+
+    except Exception as e:
+        return f"❌ DB Error: {e}"
 
 
+# ==========================
+# RUN APP
+# ==========================
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)

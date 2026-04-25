@@ -1,44 +1,21 @@
 import re
 import pandas as pd
-from database.database import get_connection
 
-def save_dynamic_table(file_path):
+def extract_committees(file_path):
 
-    # Step 1: Read Excel
     df = pd.read_excel(file_path, header=None)
     df = df.fillna("")
     data = df.values.tolist()
 
-    # 🔍 DEBUG (optional but useful)
     print("=== RAW DATA PREVIEW ===")
     for i in range(min(10, len(data))):
         print(i, data[i])
 
-    # Step 2: Extract Main Heading (Table Name)
-    main_heading = ""
-
-    for row in data:
-        if str(row[0]).strip():
-            main_heading = str(row[0]).strip()
-            break
-
-    if not main_heading:
-        raise Exception("No table heading found")
-
-    table_name = main_heading.lower()
-
-    # clean table name
-    table_name = re.sub(r'[^a-z0-9_]', '_', table_name)
-    table_name = re.sub(r'_+', '_', table_name)
-    table_name = table_name.strip('_')
-
-    # Step 3: Detect Header Row Dynamically
+    # Find header row
     header_index = None
-
     for i, row in enumerate(data):
         non_empty = [cell for cell in row if str(cell).strip() != ""]
-
-        if len(non_empty) >= 2:  # header usually has multiple columns
+        if len(non_empty) >= 2:
             header_index = i
             break
 
@@ -46,13 +23,10 @@ def save_dynamic_table(file_path):
         raise Exception("Header row not found")
 
     columns = data[header_index]
-
-    # ✅ KEEP column cleaning
     columns = [str(col).strip().replace(" ", "_") for col in columns]
 
     rows = data[header_index + 1:]
 
-    # Step 4: Handle Broken Rows
     clean_rows = []
     current_row = None
 
@@ -70,18 +44,12 @@ def save_dynamic_table(file_path):
     if current_row:
         clean_rows.append(current_row)
 
-    # 🚨 Safety check
-    if not clean_rows:
-        raise Exception("No valid data rows found after processing")
+    df_clean = pd.DataFrame(clean_rows)
 
-    # Step 5: Create DataFrame
-    df_clean = pd.DataFrame(clean_rows, columns=columns)
+    if len(df_clean.columns) == len(columns):
+        df_clean.columns = columns
 
-    # Step 6: Store in Database
-    conn = get_connection()
-    df_clean.to_sql(table_name, conn, if_exists="replace", index=False)
-    conn.close()
+    print("✅ Committees extracted successfully")
+    print(df_clean.head())
 
-    print(f"✅ Table '{table_name}' created successfully!")
-
-    return table_name
+    return df_clean   # ✅ RETURN DATAFRAME
