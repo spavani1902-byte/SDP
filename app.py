@@ -1,159 +1,197 @@
-import sys
+import io
 import os
+import sys
+import time
 import pandas as pd
-from flask import Flask, request, render_template, send_file
+from werkzeug.utils import secure_filename
+from flask import (
+    Flask, render_template, request, redirect,
+    url_for, session, send_file
+)
 
-# Fix import path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(__file__))
 
-# Services (ONLY extraction)
-from modules.iqac.service import handle_iqac
-from modules.committees.service import handle_committees
-from modules.timetable.service import handle_timetable
-
-from database.database import get_connection
+from database.database import save_dataframe
+from modules.iqac.processor       import process_iqac
+from modules.committees.processor import process_committees
+from modules.timetable.processor  import process_timetable
+from modules.iqac.excel_generator import generate_iqac_excel
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.secret_key = "sdp-secret"
 
-TEMP_DATA = {}
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
+ALLOWED_EXT = {"pdf", "docx", "doc", "xlsx", "xls"}
+
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+_PREVIEW_STORE = {}
+
+MODULE_PROCESSORS = {
+    "iqac": process_iqac,
+    "committees": process_committees,
+    "timetable": process_timetable,
+}
+
+PREVIEW_TEMPLATES = {
+    "iqac": "preview_iqac.html",
+    "committees": "preview_committees.html",
+    "timetable": "preview_timetable.html",
+}
 
 
 # ==========================
-# HOME PAGE
+# HELPERS
 # ==========================
-@app.route('/')
+def _allowed(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXT
+
+
+def _session_key():
+    if "uid" not in session:
+        session["uid"] = os.urandom(8).hex()
+    return session["uid"]
+
+
+def _store_df(df):
+    _PREVIEW_STORE[_session_key()] = df
+
+
+def _load_df():
+    return _PREVIEW_STORE.get(_session_key())
+
+
+def _df_to_excel_bytes(df):
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False)
+    return buf.getvalue()
+
+
+# ==========================
+# ROUTES
+# ==========================
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
 
-# ==========================
-# FILE UPLOAD
-# ==========================
-@app.route('/module', methods=['POST'])
+@app.route("/module", methods=["GET", "POST"])
 def module():
 
-    file = request.files.get('file')
+    if request.method == "POST":
+        file = request.files.get("file")
 
-    if not file or file.filename == "":
-        return "❌ No file uploaded"
+        if not file or not file.filename:
+            return "❌ No file selected"
 
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        if not _allowed(file.filename):
+            return "❌ Unsupported file type"
 
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    file.save(file_path)
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        file.save(file_path)
 
-    return render_template("module.html", file_path=file_path)
+        session["uploaded_file"] = file_path
+        session["original_name"] = file.filename
+
+    if "uploaded_file" not in session:
+        return redirect(url_for("index"))
+
+    return render_template("module.html", file_path=session.get("original_name"))
 
 
 # ==========================
 # PROCESS (PREVIEW ONLY)
 # ==========================
-@app.route('/process', methods=['POST'])
+@app.route("/process", methods=["POST"])
 def process():
 
-    module = request.form.get('module')
-    file_path = request.form.get('file_path')
+    module = request.form.get("module", "").lower()
+    file_path = session.get("uploaded_file")
 
-    if not module or not file_path:
-        return "❌ Invalid request"
+    if not file_path:
+        return "❌ File path missing"
+
+    if module not in MODULE_PROCESSORS:
+        return f"❌ Invalid module: {module}"
 
     try:
-        # 🔄 Convert Word → Excel
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == ".docx":
-            from word.converter import convert_word_to_excel
-            file_path = convert_word_to_excel(file_path)
+        # ✅ ONLY EXTRACT RAW DATA
+        df = MODULE_PROCESSORS[module](file_path)
 
-        # ======================
-        # MODULE HANDLING
-        # ======================
+    except Exception as e:
+        return f"<h2>Error:</h2><pre>{e}</pre>"
+
+    if df is None or df.empty:
+        return "❌ No data extracted"
+
+    # ✅ STORE RAW DATA (IMPORTANT)
+    _store_df(df)
+    session["current_module"] = module
+
+    rows = df.to_dict(orient="records")
+    columns = list(df.columns)
+
+    return render_template(
+        PREVIEW_TEMPLATES[module],
+        rows=rows,
+        columns=columns,
+        module=module
+    )
+
+
+# ==========================
+# FINAL (SAVE + DOWNLOAD)
+# ==========================
+@app.route("/final", methods=["POST"])
+def final():
+
+    df = _load_df()
+    module = session.get("current_module", "data")
+
+    if df is None or df.empty:
+        return "❌ No data available"
+
+    table_name = f"{module}_{int(time.time())}"
+
+    try:
+        # ✅ SAVE RAW DATA TO DATABASE
+        save_dataframe(df, table_name)
+        print(f"✅ Saved to DB: {table_name}")
+
+        # ==========================
+        # IQAC TEMPLATE GENERATION
+        # ==========================
         if module == "iqac":
-            df, table_name = handle_iqac(file_path)
-            template = "preview_iqac.html"
 
-        elif module == "committees":
-            df, table_name = handle_committees(file_path)
-            template = "preview_committees.html"
+            template_path = "modules/iqac/template.xlsx"
+            output_path = f"{table_name}.xlsx"
 
-        elif module == "timetable":
-            df, table_name = handle_timetable(file_path)
-            template = "preview_timetable.html"
+            generate_iqac_excel(df, template_path, output_path)
 
+            return send_file(output_path, as_attachment=True)
+
+        # ==========================
+        # OTHER MODULES (NORMAL EXCEL)
+        # ==========================
         else:
-            return "❌ Invalid module selected"
+            excel_bytes = _df_to_excel_bytes(df)
 
-        # 🔥 Ensure DataFrame
-        if not isinstance(df, pd.DataFrame):
-            df = pd.DataFrame(df)
-
-        if df.empty:
-            return "❌ No data extracted"
-
-        # 🔥 STORE EXACT DATAFRAME (IMPORTANT CHANGE)
-        TEMP_DATA["df"] = df
-        TEMP_DATA["table_name"] = table_name
-        TEMP_DATA["module"] = module
-
-        print("📊 PREVIEW DATA:")
-        print(df.head())
-
-        # 🔥 Convert for UI only
-        data = df.to_dict(orient='records')
-
-        return render_template(
-            template,
-            data=data,
-            table_name=table_name,
-            module=module,
-            file_path=file_path
-        )
+            return send_file(
+                io.BytesIO(excel_bytes),
+                as_attachment=True,
+                download_name=f"{table_name}.xlsx",
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
     except Exception as e:
         return f"❌ Error: {e}"
 
 
 # ==========================
-# CONFIRM → STORE + DOWNLOAD
-# ==========================
-@app.route('/confirm', methods=['POST'])
-def confirm():
-
-    df = TEMP_DATA.get("df")
-    table_name = TEMP_DATA.get("table_name")
-
-    if df is None or table_name is None:
-        return "❌ Session expired"
-
-    if df.empty:
-        return "❌ No data to store"
-
-    try:
-        print("📊 STORING DATA:")
-        print(df.head())
-
-        # 🔥 STORE EXACT PREVIEW DATA
-        conn = get_connection()
-
-        df.to_sql(table_name, conn, if_exists="replace", index=False)
-
-        conn.commit()   # 🔥 IMPORTANT
-        conn.close()
-
-        print(f"✅ Data stored in DB: {table_name}")
-
-        # 🔥 Download file
-        output_file = f"{table_name}.xlsx"
-        df.to_excel(output_file, index=False)
-
-        return send_file(output_file, as_attachment=True)
-
-    except Exception as e:
-        return f"❌ DB Error: {e}"
-
-
-# ==========================
-# RUN APP
+# RUN
 # ==========================
 if __name__ == "__main__":
-    app.run(debug=True, use_reloader=False)
+    app.run(debug=True,use_reloader=False)

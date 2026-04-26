@@ -1,88 +1,142 @@
-import pandas as pd
+"""
+extractor.py — FINAL IQAC EXTRACTOR (TABLE + TEXT MARKS FIX)
+"""
+
 import re
+import pandas as pd
+from typing import List
 
-def excel_to_bridge(path):
 
-    df = pd.read_excel(path, header=None)
-    df = df.fillna("")
+def extract_iqac_from_df(df: pd.DataFrame) -> List[dict]:
 
-    extracted = []
-    current_main = 1
-    current_part = "A"
+    if df is None or df.empty:
+        return []
+
+    df = df.fillna("").astype(str)
+
+    last_co = "CO1"
+    last_bl = "L1"
+
+    current_main = None
+    in_part_b = False
+
+    results = []
+    seen = set()
 
     for _, row in df.iterrows():
 
-        row_values = [str(x).strip() for x in row]
-        line = " ".join(row_values).upper()
+        # 🔥 STRONG ROW TEXT (IMPORTANT FIX)
+        row_text = " ".join([str(x) for x in row.values])
+        row_text = row_text.replace("\n", " ")
+        row_text = re.sub(r'\s+', ' ', row_text)
+        row_text = re.sub(r'[*_`]', '', row_text).upper().strip()
 
-        # ======================
-        # PART DETECTION
-        # ======================
-        if "PART-A" in line or "PART A" in line:
-            current_part = "A"
+        if not row_text:
             continue
 
-        elif "PART-B" in line or "PART B" in line:
-            current_part = "B"
+        # -------------------------
+        # PART B DETECTION
+        # -------------------------
+        if "PART-B" in row_text or "PART B" in row_text:
+            in_part_b = True
             continue
 
-        # ======================
-        # QUESTION DETECTION
-        # ======================
-        qcell = row_values[0] if len(row_values) > 0 else ""
+        # -------------------------
+        # CO
+        # -------------------------
+        co_match = re.search(r'CO\s*(\d+)', row_text)
+        if co_match:
+            last_co = f"CO{co_match.group(1)}"
 
-        match = re.match(r'(\d+)[\.\)]\s*([a-jA-J])', qcell)
-        if match:
-            current_main = int(match.group(1))
-            sub = match.group(2).lower()
-            qno = f"{current_main}{sub}"
+        # -------------------------
+        # BL
+        # -------------------------
+        bl_match = re.search(r'\bL[-\s]?([1-6])\b', row_text)
+        if bl_match:
+            last_bl = f"L{bl_match.group(1)}"
 
-        elif re.match(r'^\(?([a-jA-J])\)', qcell):
-            sub = qcell[0].lower()
-            qno = f"{current_main}{sub}"
+        # -------------------------
+        # CLEAN CELLS
+        # -------------------------
+        cells = [
+            re.sub(r'[*_`]', '', c).upper().strip()
+            for c in row.values
+        ]
 
-        elif re.match(r'^\d+$', qcell):
-            current_main = int(qcell)
-            qno = str(current_main)
+        qno = None
+        part = None
 
-        else:
-            continue
+        # -------------------------
+        # 2.a pattern
+        # -------------------------
+        for cell in cells:
+            m = re.search(r'(\d+)\s*\.\s*\(?([A-J])', cell)
+            if m:
+                current_main = m.group(1)
+                qno = f"{current_main}{m.group(2).lower()}"
+                part = "B"
+                in_part_b = True
+                break
 
-        # ======================
-        # CO DETECTION
-        # ======================
-        co_match = re.search(r'CO\s*\d+', line, re.IGNORECASE)
-        co = co_match.group(0).replace(" ", "").upper() if co_match else "CO1"
-
-        # ======================
-        # BLOOM LEVEL
-        # ======================
-        bl_match = re.search(r'\bL\s*([1-6])\b', line, re.IGNORECASE)
-        bl = f"L{bl_match.group(1)}" if bl_match else "L1"
-
-        # ======================
-        # MARKS
-        # ======================
-        marks = 1
-        for val in reversed(row_values):
-            if val.isdigit():
-                num = int(val)
-                if 1 <= num <= 10:
-                    marks = num
+        # -------------------------
+        # b) continuation
+        # -------------------------
+        if not qno and in_part_b and current_main:
+            for cell in cells:
+                m = re.match(r'^\(?([A-J])', cell)
+                if m:
+                    qno = f"{current_main}{m.group(1).lower()}"
+                    part = "B"
                     break
 
-        # ======================
-        # APPEND
-        # ======================
-        extracted.append([qno, marks, co, bl, current_part])
+        # -------------------------
+        # a) Part A
+        # -------------------------
+        if not qno and not in_part_b:
+            for cell in cells:
+                m = re.match(r'^\(?([A-J])', cell)
+                if m:
+                    qno = f"1{m.group(1).lower()}"
+                    part = "A"
+                    break
 
-    # ======================
-    # SAVE BRIDGE FILE
-    # ======================
-    out = pd.DataFrame(extracted, columns=["Qno", "Marks", "CO", "BL", "Part"])
-    out.to_excel("bridge.xlsx", index=False)
+        # -------------------------
+        # 🔥 MARKS FIX (FINAL)
+        # -------------------------
+        marks = None
 
-    print("✅ Extracted rows:", len(out))
-    print(out.head())
+        # Strict [3M]
+        marks_match = re.search(r'\[(\d+)\s*M\]', row_text)
 
-    return "bridge.xlsx"
+        # Loose 3M
+        if not marks_match:
+            marks_match = re.search(r'(\d+)\s*M', row_text)
+
+        if marks_match:
+            marks = int(marks_match.group(1))
+        else:
+            # fallback
+            marks = 1 if part == "A" else 5
+
+        # -------------------------
+        # SAVE
+        # -------------------------
+        if qno and qno not in seen:
+            results.append({
+                "qno": qno,
+                "co": last_co,
+                "bl": last_bl,
+                "marks": marks,
+                "part": part
+            })
+            seen.add(qno)
+
+    # -------------------------
+    # SORT
+    # -------------------------
+    def sort_key(x):
+        num = int(re.match(r'\d+', x["qno"]).group())
+        sub = x["qno"][-1]
+        return (num, sub)
+
+    return sorted(results, key=sort_key)

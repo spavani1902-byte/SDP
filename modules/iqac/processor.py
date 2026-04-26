@@ -1,53 +1,40 @@
 import pandas as pd
-import time
-import os
-
-from .extractor import excel_to_bridge
-from .parser import parse_excel_full
-from .generator import update_mapping
+from table_loader import get_dataframes_from_file
+from modules.iqac.extractor import extract_iqac_from_df
 
 
-def process_iqac(file_path):
+def process_iqac(file_path: str):
 
-    print("🚀 Starting IQAC Processing...")
+    dfs = get_dataframes_from_file(file_path)
 
-    # ======================
-    # STEP 1: EXTRACT → BRIDGE
-    # ======================
-    bridge_file = excel_to_bridge(file_path)
-    print("✅ Bridge file created:", bridge_file)
+    if not dfs:
+        raise ValueError("No tables found.")
 
-    # ======================
-    # STEP 2: PARSE
-    # ======================
-    parsed = parse_excel_full(bridge_file)
-    print("✅ Parsed records:", len(parsed))
+    print("\n📂 DEBUG TABLES")
 
-    if not parsed:
-        raise Exception("No valid questions parsed. Check input format.")
+    for i, df in enumerate(dfs):
+        print(f"\nTABLE {i+1}")
+        print(df.head(10))
 
-    # ======================
-    # STEP 3: GENERATE IQAC
-    # ======================
-    output_file = f"iqac_output_{int(time.time())}.xlsx"
+    records = []
 
-    update_mapping(output_file, parsed)
+    for df in dfs:
+        records.extend(extract_iqac_from_df(df))
 
-    print("✅ IQAC Excel generated:", output_file)
+    if not records:
+        raise ValueError("No IQAC data found.")
 
-    # ======================
-    # STEP 4: LOAD FOR PREVIEW
-    # ======================
-    try:
-        df = pd.read_excel(output_file)
-    except Exception as e:
-        raise Exception(f"Error reading generated IQAC file: {e}")
+    print("\n📦 FINAL RECORDS")
+    print(records)
 
-    # ======================
-    # STEP 5: TABLE NAME
-    # ======================
-    table_name = "iqac_" + str(int(time.time()))
+    result = pd.DataFrame(records)
 
-    print("🎯 IQAC Processing Completed")
+    result = result.rename(columns={
+        "qno": "QNo",
+        "co": "CO",
+        "bl": "BL",
+        "marks": "Marks",
+        "part": "Part"
+    })
 
-    return parsed, table_name
+    return result[["QNo", "CO", "BL", "Marks", "Part"]]

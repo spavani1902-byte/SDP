@@ -1,59 +1,52 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Preview Mapping</title>
+    <title>IQAC Preview</title>
 
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: Arial;
             background: linear-gradient(to right, #4e73df, #1cc88a);
-            margin: 0;
             padding: 40px;
         }
 
         .container {
             background: white;
             padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0px 10px 25px rgba(0,0,0,0.2);
+            border-radius: 10px;
             max-width: 900px;
             margin: auto;
             text-align: center;
         }
 
-        h2 {
-            color: #333;
-            margin-bottom: 20px;
-        }
-
         table {
             border-collapse: collapse;
             width: 100%;
+            margin-top: 20px;
         }
 
         th, td {
-            padding: 10px;
             border: 1px solid #ddd;
+            padding: 10px;
         }
 
         th {
-            background-color: #4e73df;
+            background: #4e73df;
             color: white;
         }
 
         button {
             margin-top: 20px;
-            background-color: #1cc88a;
+            padding: 10px 20px;
+            background: #1cc88a;
             color: white;
             border: none;
-            padding: 12px 25px;
-            border-radius: 5px;
             cursor: pointer;
-            font-size: 16px;
+            border-radius: 5px;
         }
 
         button:hover {
-            background-color: #17a673;
+            background: #17a673;
         }
     </style>
 </head>
@@ -62,31 +55,29 @@
 
 <div class="container">
 
-<h2>✅ Preview Extracted Mapping</h2>
+<h2>📊 IQAC Preview</h2>
 
 <table>
 <tr>
-<th>Q.No</th>
-<th>CO</th>
-<th>BL</th>
-<th>Marks</th>
-<th>Part</th>
+    {% for col in columns %}
+        <th>{{ col }}</th>
+    {% endfor %}
 </tr>
 
-{% for row in data %}
+{% for row in rows %}
 <tr>
-<td>{{row.q}}</td>
-<td>{{row.co}}</td>
-<td>{{row.level}}</td>
-<td>{{row.marks}}</td>
-<td>{{row.part}}</td>
+    {% for col in columns %}
+        <td>{{ row[col] }}</td>
+    {% endfor %}
 </tr>
 {% endfor %}
 </table>
-
-<form action="/confirm" method="post">
-<button>✔ Confirm & Generate IQAC</button>
+<!-- SAVE -->
+<form action="/final" method="POST">
+    <button>✔ Confirm & Download</button>
 </form>
+
+
 
 </div>
 
